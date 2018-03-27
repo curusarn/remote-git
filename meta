@@ -68,15 +68,10 @@ meta_record() {
         path="$git_meta_path"/`uniq_git_repo_path`
         [[ ! -d "$path" ]] && mkdir -p "$path"
 
-        echo "x"
         git rev-parse HEAD > "$path/HEAD"
-        echo "x"
         git rev-parse --short HEAD > "$path/HEAD_short"
-        echo "x"
         git status --short > "$path/status_short"
-        echo "x"
         git cherry -v > "$path/cherry_v"
-        echo "x"
     done
     cd "$save_dir"
 }
@@ -95,8 +90,7 @@ meta_push() {
         exit 3
     fi
     cd "$git_meta_path" 
-    echo "in short Fatty"
-    #git push 
+    git push 
     cd - >/dev/null
 }
 
