@@ -30,6 +30,13 @@ uniq_git_repo_path() {
     echo "$remote" | sed 's/^[a-zA-Z \t]*@//;s/\.git$//' | tr -s ':' '/'
 }
 
+get_origin() {
+    server=`echo "$1" | cut -d'/' -f1`
+    user=`echo "$1" | cut -d'/' -f2`
+    repo=`echo "$1" | cut -d'/' -f3`
+    echo "git@$server:$user/$repo.git"
+}
+
 meta_pull() {
     if [[ ! -d "$git_meta_path/.git" ]]; then
         echo "WARN: No .git directory <$git_meta_path/.git>"\
@@ -61,18 +68,15 @@ meta_record() {
             continue
         fi
         
-        path="$git_meta_path"/`uniq_git_repo_path`/"$device_id"
+        path="$git_meta_path/data/`uniq_git_repo_path`/$device_id"
         [[ ! -d "$path" ]] && mkdir -p "$path"
-
-        rm "$path/HEAD"
-        rm "$path/HEAD_short"
-        rm "$path/status_short"
-        rm "$path/cherry_v"
+        pwd
 
         git rev-parse HEAD > "$path/HEAD"
         git rev-parse --short HEAD > "$path/HEAD_short"
         git status --short > "$path/status_short"
         git cherry -v > "$path/cherry_v"
+        git log --max-count "$log_max_count" --pretty=format:%H > "$path/log_H"
     done
     cd "$save_dir"
 }
@@ -85,11 +89,15 @@ meta_commit() {
     fi
     cd "$git_meta_path" 
     git add .
-    if git diff --cached --exit-code; then
+    if git diff --cached --exit-code >/dev/null; then
         echo "WARN: Git states did not change - nothing to commit."
     else
         echo "commit"
-        git commit -m "Device: $device_id"
+        if [[ -z ${1+x} ]]; then
+            git commit -m "Device: $device_id"
+        else
+            git commit -m "$1"
+        fi
     fi
     cd "$save_dir" 
 }
@@ -112,6 +120,75 @@ meta_push() {
     cd "$save_dir" 
 }
 
+# data_xxx fuctions are for remote data processing
+
+data_origin() {
+    cd "$git_meta_path/data" 
+    for repo in */*/*; do
+        path="$git_meta_path/data/$repo"
+        origin_path="$path/origin"
+        tmp_origin=`mktemp -d`
+        if git clone `get_origin $repo` "$tmp_origin"; then
+            [[ ! -d "$origin_path" ]] && mkdir -p "$origin_path"
+            cd "$tmp_origin"
+
+            git rev-parse HEAD > "$origin_path/HEAD"
+            git rev-parse --short HEAD > "$origin_path/HEAD_short"
+            git log --max-count "$log_max_count" --pretty=format:%H > "$origin_path/log_H"
+
+        fi
+        cd "$git_meta_path/data" 
+        rm -rf "$tmp_origin"
+        break
+    done
+}
+
+data_delta() {
+    cd "$git_meta_path/data" 
+    for repo in */*/*; do
+        path="$git_meta_path/data/$repo"
+        origin_path="$path/origin"
+        if [[ ! -d "$origin_path" ]]; then
+            echo "WARN: No origin data for <$path>"
+            continue
+        fi
+        cd "$path"
+        for device in *; do 
+            [[ "$device" == "origin" ]] && continue 
+
+            if diff -q origin/log_H "$device/log_H"; then
+                echo "0" > "$path/$device/origin_delta"
+            else
+                diff_line=`diff origin/log_H "$device/log_H" -n | head -n 1`
+                delta_value=`echo $diff_line | cut -d' ' -f2`
+                if [[ "$diff_line" == d* ]]; then
+                    # behind
+                    let "delta_value *= -1"
+                fi
+                echo "$delta_value" > "$path/$device/origin_delta"
+            fi
+        done
+        cd "$git_meta_path/data" 
+    done
+    
+}
+
+data_process() {
+    if [[ "$device_id" != "REMOTE" ]]; then
+        read -r -p "WARN: device_id != 'REMOTE' - do you want to run data processiong locally? [Y/n] " response
+        if [[ "$response" =~ "^([nN]+$" ]]; then
+            echo "WARN: Exiting!"
+            exit 0
+        fi
+    fi
+    
+    data_origin
+    meta_commit "Origin data [ci skip]"
+    data_delta
+    meta_commit "Delta data [ci skip]"
+    meta_push
+}
+
 if [ $# -ne 1 ]; then
     echo "ERR: Wrong number of arguments - required 1, found <$#>"
     print_help
@@ -121,6 +198,7 @@ fi
 # default config
 git_path=~/git
 git_meta_path=~/.cache/git-meta-status
+log_max_count=256
 
 # load config if exists
 if [ -f "$config_path" ]; then 
@@ -143,6 +221,9 @@ case $1 in
         echo "ERR: Not implemented :("
         print_help
         exit 42
+        ;;
+    process-data)
+        data_process 
         ;;
     help)
         print_help
