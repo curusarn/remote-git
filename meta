@@ -88,6 +88,10 @@ meta_commit() {
 }
 
 meta_push() {
+    if [[ -z "`git cherry -v`" ]]; then
+        echo "WARN: Git states did not change - nothing to push."
+        return
+    fi
     if [[ ! -d "$git_meta_path" ]]; then 
         echo "ERR: git_meta_path <$git_meta_path> does not exist"
         print_help
