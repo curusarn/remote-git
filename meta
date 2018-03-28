@@ -64,6 +64,11 @@ meta_record() {
         path="$git_meta_path"/`uniq_git_repo_path`/"$device_id"
         [[ ! -d "$path" ]] && mkdir -p "$path"
 
+        rm "$path/HEAD"
+        rm "$path/HEAD_short"
+        rm "$path/status_short"
+        rm "$path/cherry_v"
+
         git rev-parse HEAD > "$path/HEAD"
         git rev-parse --short HEAD > "$path/HEAD_short"
         git status --short > "$path/status_short"
@@ -80,7 +85,7 @@ meta_commit() {
     fi
     cd "$git_meta_path" 
     git add .
-    if git diff --exit-code; then
+    if git diff --cached --exit-code; then
         echo "WARN: Git states did not change - nothing to commit."
     else
         echo "commit"
