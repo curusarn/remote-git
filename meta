@@ -56,8 +56,6 @@ meta_record() {
     cd "$git_root" 
     for repo in *; do
         cd "$git_root/$repo"
-        echo "REPO:"
-        echo "$git_root/$repo"
         if [[ ! -d .git ]]; then
             echo "WARN: <$git_root/$repo> is not a git repository - skipping!"
             continue
@@ -81,11 +79,11 @@ meta_commit() {
         exit 40 
     fi
     cd "$git_meta_path" 
-    if ! git diff-index --quiet HEAD; then
+    git add .
+    if git diff --exit-code; then
         echo "WARN: Git states did not change - nothing to commit."
     else
         echo "commit"
-        git add .
         git commit -m "Device: $device_id"
     fi
     cd "$save_dir" 
