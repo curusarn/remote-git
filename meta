@@ -77,10 +77,11 @@ meta_record() {
 }
 
 meta_commit() {
-    if git diff-index --quiet HEAD; then
+    if ! git diff-index --quiet HEAD; then
         echo "WARN: Git states did not change - nothing to commit."
         return
     fi
+
     cd "$git_meta_path" 
     git add .
     git commit -m "Device: $device_id"
@@ -88,18 +89,20 @@ meta_commit() {
 }
 
 meta_push() {
-    if [[ -z "`git cherry -v`" ]]; then
-        echo "WARN: Git states did not change - nothing to push."
-        return
-    fi
     if [[ ! -d "$git_meta_path" ]]; then 
         echo "ERR: git_meta_path <$git_meta_path> does not exist"
         print_help
         exit 3
     fi
     cd "$git_meta_path" 
-    git push 
-    cd - >/dev/null
+
+    if [[ -z "`git cherry -v`" ]]; then
+        echo "WARN: Git states did not change - nothing to push."
+    else
+        git push 
+    fi
+
+    cd "$save_dir" 
 }
 
 if [ $# -ne 1 ]; then
