@@ -65,7 +65,7 @@ meta_record() {
             continue
         fi
         
-        path="$git_meta_path"/`uniq_git_repo_path`
+        path="$git_meta_path"/`uniq_git_repo_path`/"$device_id"
         [[ ! -d "$path" ]] && mkdir -p "$path"
 
         git rev-parse HEAD > "$path/HEAD"
@@ -77,6 +77,10 @@ meta_record() {
 }
 
 meta_commit() {
+    if git diff-index --quiet HEAD; then
+        echo "WARN: Git states did not change - nothing to commit."
+        return
+    fi
     cd "$git_meta_path" 
     git add .
     git commit -m "Device: $device_id"
