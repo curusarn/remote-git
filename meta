@@ -83,11 +83,11 @@ meta_commit() {
     cd "$git_meta_path" 
     if ! git diff-index --quiet HEAD; then
         echo "WARN: Git states did not change - nothing to commit."
-        return
+    else
+        echo "commit"
+        git add .
+        git commit -m "Device: $device_id"
     fi
-
-    git add .
-    git commit -m "Device: $device_id"
     cd "$save_dir" 
 }
 
@@ -102,6 +102,7 @@ meta_push() {
     if [[ -z "`git cherry -v`" ]]; then
         echo "WARN: Git states did not change - nothing to push."
     else
+        echo "push"
         git push 
     fi
 
