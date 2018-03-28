@@ -12,7 +12,13 @@ print_help() {
     echo "         help             Shows this help"
 }
 
+# returns unique indentifier for a current repo based on origin remote address
 uniq_git_repo_path() {
+    if [[ ! -d ".git" ]]; then
+        echo "ERR: <`pwd`> is not a git repository!"
+        print_help
+        exit 10
+    fi
     remote=`git remote -v | grep origin | tr ' ' '\t' | cut -f2 | head -n 1`
     if [[ "$remote" != *"@"* ]]; then
         host=`echo "$remote" | cut -d'/' -f3`
@@ -25,43 +31,35 @@ uniq_git_repo_path() {
 }
 
 meta_pull() {
-    if [[ ! -d "$git_meta_path" ]]; then
-        echo "WARN: No directory <$git_meta_path> - will try to clone meta remote!"
-        git_meta_parent_dir=`echo "$git_meta_path" | rev | cut -d'/' -f2- | rev`
-        if [[ ! -z "$git_meta_parent_dir" ]] && [[ ! -d "$git_meta_parent_dir" ]]; then
-            echo "WARN: No directory <$git_meta_parent_dir> - creating!"
-            mkdir -p "$git_meta_parent_dir"
-        fi
+    if [[ ! -d "$git_meta_path/.git" ]]; then
+        echo "WARN: No .git directory <$git_meta_path/.git>"\
+             " - cloning <$git_meta_remote>!"
+        [[ ! -d "$git_meta_path" ]] && mkdir -p "$git_meta_path"
         git clone "$git_meta_remote" "$git_meta_path"
     fi
     cd "$git_meta_path" 
-    if [[ ! -d ".git" ]]; then
-        echo "ERR: <$git_meta_path> is not a repository - please remove <$git_meta_path> directory to enable clone."
-        print_help
-        exit 5
-    fi
     git pull 
     cd "$save_dir" 
 }
 
 meta_record() {
-    if [[ ! -d "$git_dir_path" ]]; then 
-        echo "ERR: git_dir_path <$git_dir_path> does not exist"
+    if [[ ! -d "$git_root" ]]; then 
+        echo "ERR: git_root <$git_root> does not exist"
         print_help
-        exit 3
+        exit 30 
     fi
-    if [[ ! -d "$git_meta_path" ]]; then
-        echo "ERR: Directory <$git_meta_path> does not exist"
+    if [[ ! -d "$git_meta_path/.git" ]]; then
+        echo "ERR: Directory <$git_meta_path/.git> does not exist"
         print_help
-        exit 4
+        exit 31 
     fi
-    cd "$git_dir_path" 
+    cd "$git_root" 
     for repo in *; do
-        cd "$git_dir_path/$repo"
+        cd "$git_root/$repo"
         echo "REPO:"
-        echo "$git_dir_path/$repo"
+        echo "$git_root/$repo"
         if [[ ! -d .git ]]; then
-            echo "WARN: <$git_dir_path/$repo> is not a git repository - skipping!"
+            echo "WARN: <$git_root/$repo> is not a git repository - skipping!"
             continue
         fi
         
@@ -77,22 +75,27 @@ meta_record() {
 }
 
 meta_commit() {
+    if [[ ! -d "$git_meta_path/.git" ]]; then
+        echo "ERR: Directory <$git_meta_path/.git> does not exist"
+        print_help
+        exit 40 
+    fi
+    cd "$git_meta_path" 
     if ! git diff-index --quiet HEAD; then
         echo "WARN: Git states did not change - nothing to commit."
         return
     fi
 
-    cd "$git_meta_path" 
     git add .
     git commit -m "Device: $device_id"
     cd "$save_dir" 
 }
 
 meta_push() {
-    if [[ ! -d "$git_meta_path" ]]; then 
-        echo "ERR: git_meta_path <$git_meta_path> does not exist"
+    if [[ ! -d "$git_meta_path/.git" ]]; then
+        echo "ERR: Directory <$git_meta_path/.git> does not exist"
         print_help
-        exit 3
+        exit 50 
     fi
     cd "$git_meta_path" 
 
