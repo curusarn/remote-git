@@ -2,7 +2,7 @@
 
 config_path=~/.config/git-meta-status.sh
 
-set -euo pipefail
+set -u
 
 print_help() {
     echo "USAGE: meta ACTION"
