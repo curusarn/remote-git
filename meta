@@ -30,11 +30,20 @@ uniq_git_repo_path() {
     echo "$remote" | sed 's/^[a-zA-Z \t]*@//;s/\.git$//' | tr -s ':' '/'
 }
 
-get_origin() {
-    server=`echo "$1" | cut -d'/' -f1`
+prep_origin_vars() {
+    host=`echo "$1" | cut -d'/' -f1`
     user=`echo "$1" | cut -d'/' -f2`
     repo=`echo "$1" | cut -d'/' -f3`
-    echo "git@$server:$user/$repo.git"
+}
+
+get_origin_ssh() {
+    prep_origin_vars "$1"
+    echo "git@$host:$user/$repo.git"
+}
+
+get_origin_http() {
+    prep_origin_vars "$1"
+    echo "https://$host/$user/$repo.git"
 }
 
 meta_pull() {
@@ -42,7 +51,11 @@ meta_pull() {
         echo "WARN: No .git directory <$git_meta_path/.git>"\
              " - cloning <$git_meta_remote>!"
         [[ ! -d "$git_meta_path" ]] && mkdir -p "$git_meta_path"
-        git clone "$git_meta_remote" "$git_meta_path"
+        if ! git clone "$git_meta_remote" "$git_meta_path"; then
+            echo "ERR: Clonning <$git_meta_remote> failed - exiting!"
+            print_help
+            exit 20
+        fi
     fi
     cd "$git_meta_path" 
     git pull 
@@ -76,7 +89,10 @@ meta_record() {
         git rev-parse --short HEAD > "$path/HEAD_short"
         git status --short > "$path/status_short"
         git cherry -v > "$path/cherry_v"
-        git log --max-count "$log_max_count" --pretty=format:%H > "$path/log_H"
+        git log --max-count "$git_depth" --graph --oneline > "$path/log_graph_oneline"
+        git log --max-count "$git_depth" --oneline > "$path/log_oneline"
+        git cherry -v > "$path/cherry_v"
+        git branch --verbose > "$path/branch_verbose"
     done
     cd "$save_dir"
 }
@@ -128,18 +144,26 @@ data_origin() {
         path="$git_meta_path/data/$repo"
         origin_path="$path/origin"
         tmp_origin=`mktemp -d`
-        if git clone `get_origin $repo` "$tmp_origin"; then
-            [[ ! -d "$origin_path" ]] && mkdir -p "$origin_path"
-            cd "$tmp_origin"
-
-            git rev-parse HEAD > "$origin_path/HEAD"
-            git rev-parse --short HEAD > "$origin_path/HEAD_short"
-            git log --max-count "$log_max_count" --pretty=format:%H > "$origin_path/log_H"
-
+        echo "$repo"
+        if ! git clone --depth $git_depth `get_origin_ssh $repo` "$tmp_origin"; then
+            echo "WARN: Can't clone <$repo> via ssh - trying https" 
+            if ! git clone --depth $git_depth `get_origin_http $repo` "$tmp_origin"; then
+                echo "ERR: Can't clone <$repo> via https." 
+                cd "$git_meta_path/data" 
+                rm -rf "$tmp_origin"
+                continue
+            fi
         fi
+
+        [[ ! -d "$origin_path" ]] && mkdir -p "$origin_path"
+        cd "$tmp_origin"
+
+        git rev-parse HEAD > "$origin_path/HEAD"
+        git rev-parse --short HEAD > "$origin_path/HEAD_short"
+        git log --max-count "$git_depth" --pretty=format:%H > "$origin_path/log_H"
+
         cd "$git_meta_path/data" 
         rm -rf "$tmp_origin"
-        break
     done
 }
 
@@ -198,7 +222,10 @@ fi
 # default config
 git_path=~/git
 git_meta_path=~/.cache/git-meta-status
-log_max_count=256
+git_depth=24
+
+# non-interactive git clone
+export GIT_TERMINAL_PROMPT=0
 
 # load config if exists
 if [ -f "$config_path" ]; then 
