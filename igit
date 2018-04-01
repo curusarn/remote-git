@@ -5,11 +5,18 @@ config_path=~/.config/git-meta-status.sh
 set -u
 
 print_help() {
-    echo "USAGE: meta ACTION"
+    echo "USAGE: igit ACTION"
     echo " "
-    echo "ACTIONS: session-exit     Saves local git states to remote repository"
-    echo "         status           Shows all git states of all machines"
-    echo "         help             Shows this help"
+    echo "ACTIONS: "
+    echo "         meta META_ACTION      "
+    echo "         status [DEVICE]       Shows all git states of all machines"
+    echo "         help                  Shows this help"
+    echo " "
+    echo "META_ACTIONS: "
+    echo "         session-exit          Saves local git states to remote repository"
+    echo "         session-start         Pulls remote git states from remote repository"
+    echo "         device                Pulls remote git states from remote repository"
+    echo "         init                  Sets up igit data"
 }
 
 # returns unique indentifier for a current repo based on origin remote address
@@ -31,6 +38,12 @@ uniq_git_repo_path() {
 }
 
 prep_origin_vars() {
+    if [ $# -ne 1 ]; then
+        echo "ERR: Wrong number of arguments for prep_origin_vars()"\
+             " - required 1, found <$#>"
+        print_help
+        exit 100 
+    fi
     host=`echo "$1" | cut -d'/' -f1`
     user=`echo "$1" | cut -d'/' -f2`
     repo=`echo "$1" | cut -d'/' -f3`
@@ -44,6 +57,28 @@ get_origin_ssh() {
 get_origin_http() {
     prep_origin_vars "$1"
     echo "https://$host/$user/$repo.git"
+}
+
+get_actions() {
+    path="$git_meta_path/data/`uniq_git_repo_path`"
+    # dir does not exist
+    cd $path  
+    echo */* | tr -s ' ' '\n' | cut -d'/' -f2 | sort -u
+    cd $save_dir
+}
+
+get_diffs() {
+    if [ $# -ne 1 ]; then
+        echo "ERR: Wrong number of arguments for get_diffs()"\
+             " - required 1, found <$#>"
+        print_help
+        exit 200 
+    fi
+    path="$git_meta_path/data/`uniq_git_repo_path`"
+    # dir does not exist
+    cd $path  
+    echo $1/diff/* | tr -s ' ' '\n' | cut -d'/' -f3 
+    cd $save_dir
 }
 
 meta_pull() {
@@ -82,17 +117,26 @@ meta_record() {
         fi
         
         path="$git_meta_path/data/`uniq_git_repo_path`/$device_id"
+
+        [[ -d "$path" ]] && rm -r "$path" # add -f after testing
         [[ ! -d "$path" ]] && mkdir -p "$path"
         pwd
 
         git rev-parse HEAD > "$path/HEAD"
         git rev-parse --short HEAD > "$path/HEAD_short"
         git status --short > "$path/status_short"
+        git status > "$path/status"
         git cherry -v > "$path/cherry_v"
         git log --max-count "$git_depth" --graph --oneline > "$path/log_graph_oneline"
         git log --max-count "$git_depth" --oneline > "$path/log_oneline"
-        git cherry -v > "$path/cherry_v"
+        git log --max-count "$git_depth" --pretty="%H" > "$path/log_H"
         git branch --verbose > "$path/branch_verbose"
+        [[ ! -d "$path/diff" ]] && mkdir "$path/diff"
+        for hash in `git cherry -v | cut -d' ' -f2`; do
+            git diff "$hash^" "$hash" > "$path/diff/$hash"
+        done
+        git diff --staged > "$path/diff/staged"
+        git diff > "$path/diff/unstaged"
     done
     cd "$save_dir"
 }
@@ -206,15 +250,13 @@ data_process() {
         fi
     fi
     
-    data_origin
-    meta_commit "Origin data [ci skip]"
     data_delta
     meta_commit "Delta data [ci skip]"
     meta_push
 }
 
-if [ $# -ne 1 ]; then
-    echo "ERR: Wrong number of arguments - required 1, found <$#>"
+if [ $# -lt 1 ]; then
+    echo "ERR: Not enough arguments - found <$#>, required 1 or more - exiting!"
     print_help
     exit 1
 fi
@@ -238,28 +280,83 @@ fi
 save_dir=`pwd`
 
 case $1 in
-    session-exit)
-        meta_pull
-        meta_record
-        meta_commit
-        meta_push
-        ;;
-    status)
-        echo "ERR: Not implemented :("
-        print_help
-        exit 42
-        ;;
-    process-data)
-        data_process 
-        ;;
     help)
         print_help
         exit 0
         ;;
+    meta)
+        if [ $# -lt 2 ]; then
+            echo "ERR: Not meta action found - exiting!"
+            print_help
+            exit 2
+        fi
+        case $2 in
+            session-exit)
+                meta_pull
+                meta_record
+                meta_commit
+                meta_push
+                ;;
+            actions)
+                get_actions
+                ;;
+            devices)
+                cat "$git_meta_path/devices"
+                ;;
+            meta_actions)
+                echo "session-start session-exit init actions devices meta_actions diffs"
+                ;;
+            diffs)
+                if [[ $# -lt 3 ]]; then 
+                    echo "ERR: No device for 'igit meta diffs DEVICE' command - exiting!"
+                    print_help
+                    exit 5
+                fi
+                get_diffs "$3"
+                ;;
+        esac
+        ;;
+    diff)
+        if [[ $# -lt 3 ]]; then
+            echo "ERR: Not enough arguments for 'igit diff DEVICE COMMITISH' command - exiting!"
+            print_help
+            exit 5
+        fi
+        path="$git_meta_path/data/`uniq_git_repo_path`"
+        cd $path  
+        if [[ ! -f "$2/diff/$3" ]]; then
+            echo "ERR: File <$2/diff/$3> does not exist - exiting!"
+            print_help
+            exit 5
+        fi
+        cat $2/diff/$3 
+        ;;
     *)
-        echo "ERR: Invalid action <$1>"
-        print_help
-        exit 2
+        path="$git_meta_path/data/`uniq_git_repo_path`"
+        cd $path  
+        if [[ $# -lt 2 ]]; then
+            hits=0 
+            for device in *; do
+                [[ ! -f "$device/$1" ]] && continue
+                printf "[igit] Device <%s>:\n" "$device"
+                cat "$device/$1"
+                let "hits++"
+            done
+            if [[ $hits -eq 0 ]]; then 
+                echo "ERR: Invalid action <$1>"
+                print_help
+                exit 3
+            fi
+        else
+            if [[ ! -f "$2/$1" ]]; then 
+                echo "ERR: Invalid action <$1> and device <$2> combination."
+                print_help
+                exit 4
+            else
+                cat $2/$1
+            fi
+        fi
+        #echo $actions
         ;;
 esac
 
