@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
 
-config_path=~/.config/git-meta-status.sh
-
 set -u
 
 print_help() {
-    echo "USAGE: igit ACTION"
+    echo "USAGE: rgit ACTION"
+    echo " "
+    echo "Too alpha to have reaonable help"
     echo " "
     echo "ACTIONS: "
-    echo "         meta META_ACTION      "
-    echo "         status [DEVICE]       Shows all git states of all machines"
+    echo "         raw PATH              Shows specified rgit files for current repo"
     echo "         help                  Shows this help"
     echo " "
-    echo "META_ACTIONS: "
-    echo "         session-exit          Saves local git states to remote repository"
-    echo "         session-start         Pulls remote git states from remote repository"
-    echo "         device                Pulls remote git states from remote repository"
-    echo "         init                  Sets up igit data"
 }
 
+
 # returns unique indentifier for a current repo based on origin remote address
-uniq_git_repo_path() {
+repo_id() {
     if [[ ! -d ".git" ]]; then
         echo "ERR: <`pwd`> is not a git repository!"
         print_help
         exit 10
     fi
-    remote=`git remote -v | grep origin | tr ' ' '\t' | cut -f2 | head -n 1`
+    if [ "${OPT_dotfiles}" == true ]; then
+        remote=`eval "$dotfiles_git_cmd remote -v" | grep origin | tr ' ' '\t' | cut -f2 | head -n 1`
+    else
+        remote=`git remote -v | grep origin | tr ' ' '\t' | cut -f2 | head -n 1`
+    fi
     if [[ "$remote" != *"@"* ]]; then
+        # remote is https: transform to ssh
         host=`echo "$remote" | cut -d'/' -f3`
         repo=`echo "$remote" | cut -d'/' -f4-`
 
@@ -37,52 +37,58 @@ uniq_git_repo_path() {
     echo "$remote" | sed 's/^[a-zA-Z \t]*@//;s/\.git$//' | tr -s ':' '/'
 }
 
-get_actions() {
-    path="$git_meta_path/data/`uniq_git_repo_path`"
-    # dir does not exist
-    cd $path  
-    echo */* | tr -s ' ' '\n' | cut -d'/' -f2 | sort -u
-    cd $save_dir
-}
-
-get_diffs() {
-    if [ $# -ne 1 ]; then
-        echo "ERR: Wrong number of arguments for get_diffs()"\
-             " - required 1, found <$#>"
+require() {
+    if [ "$1" ]; then
+        echo "ERR: <$1> directory does not exist"
+        echo "ERR: Not enough arguments - found <$#>, required 1 or more - exiting!"
         print_help
-        exit 200 
+         
     fi
-    path="$git_meta_path/data/`uniq_git_repo_path`"
-    # dir does not exist
-    cd $path  
-    echo $1/diff/* | tr -s ' ' '\n' | cut -d'/' -f3 
-    cd $save_dir
+
 }
 
-meta_pull() {
-    if [[ ! -d "$git_meta_path/.git" ]]; then
-        echo "WARN: No .git directory <$git_meta_path/.git>"\
-             " - cloning <$git_meta_remote>!"
-        [[ ! -d "$git_meta_path" ]] && mkdir -p "$git_meta_path"
-        if ! git clone "$git_meta_remote" "$git_meta_path"; then
-            echo "ERR: Clonning <$git_meta_remote> failed - exiting!"
+curr_repo_rgit_path() {
+    local ret
+    ret="`curr_repo_rgit_path`"
+    if [[ ! -d "$ret" ]]; then
+        echo "ERR: <$save_dir> is not a tracked repository"
+        print_help
+        exit 2 
+    fi
+}
+
+# returns rgit path for current repo
+# checks if dir exists
+curr_repo_rgit_path() {
+    local ret
+    ret="$rgit_path/data/`repo_id`"
+    echo "$ret"
+}
+
+data_pull() {
+    if [[ ! -d "$rgit_path/.git" ]]; then
+        echo "WARN: No .git directory <$rgit_path/.git>"\
+             " - cloning <$rgit_remote>!"
+        [[ ! -d "$rgit_path" ]] && mkdir -p "$rgit_path"
+        if ! git clone "$rgit_remote" "$rgit_path"; then
+            echo "ERR: Clonning <$rgit_remote> failed - exiting!"
             print_help
             exit 20
         fi
     fi
-    cd "$git_meta_path" 
+    cd "$rgit_path" 
     git pull 
     cd "$save_dir" 
 }
 
-meta_record() {
+data_record() {
     if [[ ! -d "$git_root" ]]; then 
         echo "ERR: git_root <$git_root> does not exist"
         print_help
         exit 30 
     fi
-    if [[ ! -d "$git_meta_path/.git" ]]; then
-        echo "ERR: Directory <$git_meta_path/.git> does not exist"
+    if [[ ! -d "$rgit_path/.git" ]]; then
+        echo "ERR: Directory <$rgit_path/.git> does not exist"
         print_help
         exit 31 
     fi
@@ -94,7 +100,7 @@ meta_record() {
             continue
         fi
         
-        path="$git_meta_path/data/`uniq_git_repo_path`/$device_id"
+        path="`curr_repo_rgit_path`/$device_id"
 
         [[ -d "$path" ]] && rm -r "$path" # add -f after testing
         [[ ! -d "$path" ]] && mkdir -p "$path"
@@ -119,13 +125,13 @@ meta_record() {
     cd "$save_dir"
 }
 
-meta_commit() {
-    if [[ ! -d "$git_meta_path/.git" ]]; then
-        echo "ERR: Directory <$git_meta_path/.git> does not exist"
+data_commit() {
+    if [[ ! -d "$rgit_path/.git" ]]; then
+        echo "ERR: Directory <$rgit_path/.git> does not exist"
         print_help
         exit 40 
     fi
-    cd "$git_meta_path" 
+    cd "$rgit_path" 
     git add .
     if git diff --cached --exit-code >/dev/null; then
         echo "WARN: Git states did not change - nothing to commit."
@@ -140,13 +146,13 @@ meta_commit() {
     cd "$save_dir" 
 }
 
-meta_push() {
-    if [[ ! -d "$git_meta_path/.git" ]]; then
-        echo "ERR: Directory <$git_meta_path/.git> does not exist"
+data_push() {
+    if [[ ! -d "$rgit_path/.git" ]]; then
+        echo "ERR: Directory <$rgit_path/.git> does not exist"
         print_help
         exit 50 
     fi
-    cd "$git_meta_path" 
+    cd "$rgit_path" 
 
     if [[ -z "`git cherry -v`" ]]; then
         echo "WARN: Git states did not change - nothing to push."
@@ -158,92 +164,19 @@ meta_push() {
     cd "$save_dir" 
 }
 
-# data_xxx fuctions are for remote data processing
-
-data_origin() {
-    cd "$git_meta_path/data" 
-    for repo in */*/*; do
-        path="$git_meta_path/data/$repo"
-        origin_path="$path/origin"
-        tmp_origin=`mktemp -d`
-        echo "$repo"
-        if ! git clone --depth $git_depth `get_origin_ssh $repo` "$tmp_origin"; then
-            echo "WARN: Can't clone <$repo> via ssh - trying https" 
-            if ! git clone --depth $git_depth `get_origin_http $repo` "$tmp_origin"; then
-                echo "ERR: Can't clone <$repo> via https." 
-                cd "$git_meta_path/data" 
-                rm -rf "$tmp_origin"
-                continue
-            fi
-        fi
-
-        [[ ! -d "$origin_path" ]] && mkdir -p "$origin_path"
-        cd "$tmp_origin"
-
-        git rev-parse HEAD > "$origin_path/HEAD"
-        git rev-parse --short HEAD > "$origin_path/HEAD_short"
-        git log --max-count "$git_depth" --pretty=format:%H > "$origin_path/log_H"
-
-        cd "$git_meta_path/data" 
-        rm -rf "$tmp_origin"
-    done
-}
-
-data_delta() {
-    cd "$git_meta_path/data" 
-    for repo in */*/*; do
-        path="$git_meta_path/data/$repo"
-        origin_path="$path/origin"
-        if [[ ! -d "$origin_path" ]]; then
-            echo "WARN: No origin data for <$path>"
-            continue
-        fi
-        cd "$path"
-        for device in *; do 
-            [[ "$device" == "origin" ]] && continue 
-
-            if diff -q origin/log_H "$device/log_H"; then
-                echo "0" > "$path/$device/origin_delta"
-            else
-                diff_line=`diff origin/log_H "$device/log_H" -n | head -n 1`
-                delta_value=`echo $diff_line | cut -d' ' -f2`
-                if [[ "$diff_line" == d* ]]; then
-                    # behind
-                    let "delta_value *= -1"
-                fi
-                echo "$delta_value" > "$path/$device/origin_delta"
-            fi
-        done
-        cd "$git_meta_path/data" 
-    done
-    
-}
-
-data_process() {
-    if [[ "$device_id" != "REMOTE" ]]; then
-        read -r -p "WARN: device_id != 'REMOTE' - do you want to run data processiong locally? [Y/n] " response
-        if [[ "$response" =~ "^([nN]+$" ]]; then
-            echo "WARN: Exiting!"
-            exit 0
-        fi
-    fi
-    
-    data_delta
-    meta_commit "Delta data [ci skip]"
-    meta_push
-}
-
 if [ $# -lt 1 ]; then
     echo "ERR: Not enough arguments - found <$#>, required 1 or more - exiting!"
     print_help
     exit 1
 fi
 
-# default config
-git_path=~/git
-git_meta_path=~/.cache/git-meta-status
-git_depth=24
+config_path=~/.config/git-meta-status.sh
 
+# default config
+git_root=~/git
+rgit_path=~/.rgit
+git_depth=24
+dotfiles_git_cmd=""
 
 # load config if exists
 if [ -f "$config_path" ]; then 
@@ -253,16 +186,62 @@ else
          " - consider creating it."
 fi
 
-save_dir=`pwd`
+save_dir="`pwd`"
+[ ! -d "$curr_repo_path" ] && curr_repo_path=""
 
-case $1 in
+# init options
+OPT_dotfiles=false
+
+# get options first
+arg_count=0
+for arg in "$@"; do
+    case "$arg" in
+        --dotfiles|-d)
+            if [[ -z "$dotfiles_git_cmd" ]]; then
+                echo "ERR: \$dotfiles_git_cmd is not set - cannot use --dotfiles option"
+                print_help
+                exit 2
+            fi
+            OPT_dotfiles=true
+            ;;
+        --*|-*)
+            echo "ERR: Unknown option <$arg> - exiting!"
+            print_help
+            exit 1
+            ;;
+        *)
+            let "arg_count++"
+            ;;
+    esac
+done
+
+# get positional args
+idx=0
+declare -a pargs 
+for arg in "$@"; do
+    case "$arg" in
+        --*|-*)
+            : # do nothing
+            ;;
+        *)
+            pos_args[idx]="$arg"
+            let "idx++"
+            ;;
+    esac
+done
+
+case ${pargs[0]} in
     help)
         print_help
         exit 0
         ;;
-    meta)
+    raw)
+        path=`curr_repo_rgit_path`
+
+        ;;
+    data)
         if [ $# -lt 2 ]; then
-            echo "ERR: Not meta action found - exiting!"
+            echo "ERR: Not data action found - exiting!"
             print_help
             exit 2
         fi
@@ -277,7 +256,7 @@ case $1 in
                 get_actions
                 ;;
             devices)
-                cat "$git_meta_path/devices"
+                cat "$rgit_path/devices"
                 ;;
             meta_actions)
                 echo "session-start session-exit init actions devices meta_actions diffs"
@@ -298,7 +277,7 @@ case $1 in
             print_help
             exit 5
         fi
-        path="$git_meta_path/data/`uniq_git_repo_path`"
+        path="`curr_repo_rgit_path`"
         cd $path  
         if [[ ! -f "$2/diff/$3" ]]; then
             echo "ERR: File <$2/diff/$3> does not exist - exiting!"
@@ -308,7 +287,7 @@ case $1 in
         cat $2/diff/$3 
         ;;
     *)
-        path="$git_meta_path/data/`uniq_git_repo_path`"
+        path="`curr_repo_rgit_path`"
         cd $path  
         if [[ $# -lt 2 ]]; then
             hits=0 
@@ -335,4 +314,3 @@ case $1 in
         #echo $actions
         ;;
 esac
-
