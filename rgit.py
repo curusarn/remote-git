@@ -14,7 +14,8 @@ config_defaults = {
     "GitRoot": "~/git",
     "GitDepth": "24",
     "Path": "~/.rgit",
-    "DotfilesGitCmd": ""
+    "DotfilesGitCmd": "",
+    "DomainBlacklist": ""
 }
 
 def requireConfigOpts(config, args):
@@ -34,38 +35,45 @@ def requireConfigOpts(config, args):
 
 
 def rgitRawAction(config, arg, dotfiles=False):
+    data_path = config["data"]["path"]
+    rutils.isGitRepository(data_path, policy="require")
+
     git_cmd = "git"
     if dotfiles: 
         git_cmd = config["rgit"]["dotfilesGitCmd"]
-    repo_id = rutils.getRepoId(os.getcwd(), git_cmd)
 
-    curr_repo_path = os.path.join(config["data"]["path"], "data",
-                                  repo_id.decode("utf-8"))
+    repo_id = rutils.getRepoId(os.getcwd(), git_cmd).decode("utf-8")
+
+    curr_repo_path = os.path.join(data_path, "data", repo_id)
+
+    if not os.path.exists(curr_repo_path):
+        print("[rgit] <{0}> is not a tracked repository.".format(repo_id))
+        return
 
     dirs = rutils.listDirFilterOnlyDirectories(curr_repo_path)
 
     for device in dirs:
         path = os.path.join(curr_repo_path, device, arg)
 
-        if not os.exists(path):
+        if not os.path.exists(path):
             continue
 
         print("[rgit] device: {0}".format(device))
-        if os.isfile(path):
+        if os.path.isfile(path):
             with open(path, 'r') as fin:
                 print (fin.read())
-        elif os.isdir(path):
+        elif os.path.isdir(path):
             print("[rgit] Listing <{0}> directory!".format(arg))
             indent="    "
             for filename in os.listdir(path):
                 print(indent + filename)
-            print(filename)
+            print()
         else:
             raise Exception("<{0}> is neither regular file or directory - wtf?"
                             .format(path))
 
     if len(dirs) == 0:
-        print("[rgit] Could not find <{0}> for any device!".format(device))
+        print("[rgit] Could not find <{0}> for any device!".format(arg))
 
 
 def rgitDataAction(config, arg, dotfiles=False):
@@ -88,18 +96,11 @@ def rgitDataAction(config, arg, dotfiles=False):
         rdata.clone(config["data"]["remote"], config["data"]["path"])
 
     elif arg == "setup":
-        if not rutils.isGitRepository(config["data"]["path"]):
-            rdata.clone(config["data"]["remote"], config["data"]["path"])
+        rdata.setup(config["data"]["remote"], config["data"]["path"],
+                    config["device"]["id"])
 
-        devices_path = os.path.join(config["data"]["path"], "devices") 
-        with open(devices_path, 'r') as f:
-            match = list(filter(lambda x: x == config["device"]["id"],
-                                f.read().splitlines()))
-            
-        if len(match) == 0:
-            with open(devices_path, 'a') as f:
-                f.write(config["device"]["id"])
-            rdata.commit(config["data"]["path"], config["device"]["id"])
+    elif arg == "purge":
+        rdata.purge(config["data"]["path"])
 
     else:
         raise Exception("<{0}> is not a 'rgit data' action")
@@ -121,6 +122,8 @@ def main():
     config["data"]["path"] = os.path.expanduser(config["data"]["path"])
     config["rgit"]["gitRoot"] = os.path.expanduser(config["rgit"]["gitRoot"])
     requireConfigOpts(config, args)
+
+    rutils.setBlacklist(config["device"]["domainBlacklist"])
 
     if args.action == "help":
         parser.print_help()
