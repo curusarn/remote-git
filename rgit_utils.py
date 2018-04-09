@@ -27,20 +27,22 @@ def isGitRepository(path, policy="return"):
 
 def listDirFilterOnlyDirectories(path):
     all_files = os.listdir(path)
-    return list(filter(lambda x: os.path.isdir(x), all_files))
+    return list(filter(lambda x: os.path.isdir(os.path.join(path, x)), all_files))
 
 
 def _idFromHttps(remote):
-    if not remote.endswith(b".git"):
-        raise Exception("Fatal in _idFromHttps")
-    return remote[:-4]
+    if remote.startswith("https://"):
+        remote = remote[8:]
+    if remote.endswith(".git"):
+        remote = remote[:-4]
+    return remote
 
 
 def _idFromSsh(remote):
-    if not remote.endswith(b".git"):
-        raise Exception("Fatal in _idFromHttps")
-    after_at = remote.split(b'@')[1]
-    remote = b'/'.join(after_at.split(b':'))
+    if not remote.endswith(".git"):
+        raise Exception("Fatal in _idFromSsh")
+    after_at = remote.split('@')[1]
+    remote = '/'.join(after_at.split(':'))
     return remote[:-4]
     
 
@@ -52,10 +54,10 @@ def getRepoId(directory, git_cmd="git"):
     
     output = output.splitlines()
     output = list(filter(lambda x: b"origin" in x, output))[0] 
-    remote = output.split()[1]
-    print(remote)
+    remote = output.split()[1].decode("utf-8")
 
-    if b'@' in remote:
+    print(remote)
+    if '@' in remote:
         return _idFromSsh(remote)
     return _idFromHttps(remote)
      

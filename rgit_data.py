@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import shutil
 import subprocess
 import sys
 import os
@@ -11,15 +12,15 @@ _RECORD_CMDS = []
 
 def initRecordCmds(git_depth):
     global _RECORD_CMDS
-    _RECORD_CMDS += (' rev-parse HEAD', "HEAD")
-    _RECORD_CMDS += (' rev-parse --short HEAD', "HEAD_short")
-    _RECORD_CMDS += (' status --short', "status_short")
-    _RECORD_CMDS += (' status', "status")
-    _RECORD_CMDS += (' cherry -v', "cherry_v")
-    _RECORD_CMDS += (' log --max-count {0} --graph --oneline'.format(git_depth), "log_graph_oneline")
-    _RECORD_CMDS += (' log --max-count {0} --oneline'.format(git_depth), "log_oneline")
-    _RECORD_CMDS += (' log --max-count {0} --pretty="%H"'.format(git_depth), "log_H")
-    _RECORD_CMDS += (' branch --verbose', "branch_verbose")
+    _RECORD_CMDS.append((' rev-parse HEAD', "HEAD"))
+    _RECORD_CMDS.append((' rev-parse --short HEAD', "HEAD_short"))
+    _RECORD_CMDS.append((' status --short', "status_short"))
+    _RECORD_CMDS.append((' status', "status"))
+    _RECORD_CMDS.append((' cherry -v', "cherry_v"))
+    _RECORD_CMDS.append((' log --max-count {0} --graph --oneline'.format(git_depth), "log_graph_oneline"))
+    _RECORD_CMDS.append((' log --max-count {0} --oneline'.format(git_depth), "log_oneline"))
+    _RECORD_CMDS.append((' log --max-count {0} --pretty="%H"'.format(git_depth), "log_H"))
+    _RECORD_CMDS.append((' branch --verbose', "branch_verbose"))
 
 
 def getRecordCmds(git_cmd="git"):
@@ -28,9 +29,9 @@ def getRecordCmds(git_cmd="git"):
         yield (git_cmd + cmd[0], cmd[1])
 
 
-def getRecordCmdsDiffs(git_cmd="git"):
+def getRecordCmdsDiffs(repo_path, git_cmd="git"):
     output = subprocess.check_output(git_cmd + " cherry -v",
-                                     shell=True, cwd=cwd_path)
+                                     shell=True, cwd=repo_path)
     for line in output.splitlines():
         hash = line.split()[1]
         yield ("{0} diff {1}^ {1}".format(git_cmd, hash), "diff/" + hash)
@@ -44,8 +45,9 @@ def clone(remote, path):
         os.makedirs(path)
 
     cmd = ("git", "clone", remote, path)
+    print(cmd)
     print("[rgit] clone")
-    subprocess.call(cmd)
+    subprocess.call(cmd, cwd='/')
     
 
 def pull(remote, path):
@@ -59,24 +61,29 @@ def pull(remote, path):
 
 def _recordGitCmd(cmd, filename, path, cwd_path):
     file_path = os.path.join(path, filename)
-    output = subprocess.check_output(cmd, shell=True, cwd=cwd_path)
+    output = subprocess.check_output(cmd, shell=True, cwd=cwd_path)\
+             .decode("utf-8")
     with open(file_path, 'w') as f:
         f.write(output)
 
 
-def _recordRepository(repo_path, device_id, git_cmd="git"):
+def _recordRepository(repo_path, data_path, device_id, git_cmd="git"):
     repo_id = rutils.getRepoId(repo_path)
 
     path = os.path.join(data_path, "data", repo_id, device_id)
+
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+    os.makedirs(path)
 
     for cmd in getRecordCmds(git_cmd):
         _recordGitCmd(cmd[0], cmd[1], path, repo_path)
 
     diff_path = os.path.join(path, "diff")
-    if not os.isdir(diff_path):
-        os.mkdirs(diff_path)
+    os.makedirs(diff_path)
 
-    for cmd in getRecordCmdsDiffs(git_cmd):
+    for cmd in getRecordCmdsDiffs(repo_path, git_cmd):
         _recordGitCmd(cmd[0], cmd[1], path, repo_path)
 
 
@@ -94,11 +101,11 @@ def record(git_root, data_path, device_id, git_depth, dotfiles_git_cmd=None):
 
         repo_id = rutils.getRepoId(repo_path)
         if not rutils.isBlacklisted(repo_id):
-            _recordRepository(repo_path)
+            _recordRepository(repo_path, data_path, device_id)
 
     # dotfiles
     if dotfiles_git_cmd:
-        _recordRepository(".", dotfiles_git_cmd)
+        _recordRepository(".", data_path, device_id, dotfiles_git_cmd)
 
 
 def commit(path, device_id, commit_msg=None):
@@ -124,3 +131,28 @@ def push(path):
     subprocess.check_call(cmd, cwd=path)
 
 
+def purge(path):
+    print("[rgit] purge")
+    #path = os.path.join(path, "data")
+    if os.path.exists(path):
+        print("[rgit] deleting <{0}>".format(path))
+        shutil.rmtree(path)
+
+
+def setup(remote, path, device_id):
+    print("[rgit] setup")
+    print(remote)
+    print(path)
+    print(device_id)
+    if not os.path.exists(path) or not rutils.isGitRepository(path):
+        clone(remote, path)
+
+    devices_path = os.path.join(path, "devices") 
+    with open(devices_path, 'r') as f:
+        match = list(filter(lambda x: x == device_id,
+                            f.read().splitlines()))
+
+    if len(match) == 0:
+        with open(devices_path, 'a') as f:
+            f.write(device_id)
+        commit(path, device_id)
