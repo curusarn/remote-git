@@ -42,7 +42,7 @@ def rgitRawAction(config, arg, dotfiles=False):
     if dotfiles: 
         git_cmd = config["rgit"]["dotfilesGitCmd"]
 
-    repo_id = rutils.getRepoId(os.getcwd(), git_cmd).decode("utf-8")
+    repo_id = rutils.getRepoId(os.getcwd(), git_cmd)
 
     curr_repo_path = os.path.join(data_path, "data", repo_id)
 
@@ -82,8 +82,13 @@ def rgitDataAction(config, arg, dotfiles=False):
         rdata.pull(config["data"]["remote"], config["data"]["path"])
 
         rdata.initRecordCmds(config["rgit"]["gitDepth"])
+        dotfiles_git_cmd = None
+        if config["rgit"]["trackDotfiles"]:
+            dotfiles_git_cmd = config["rgit"]["dotfilesGitCmd"]
+
         rdata.record(config["rgit"]["gitRoot"], config["data"]["path"],
-                     config["device"]["id"], config["rgit"]["dotfilesGitCmd"])
+                     config["device"]["id"], config["rgit"]["gitDepth"],
+                     dotfiles_git_cmd)
         
         rdata.commit(config["data"]["path"], config["device"]["id"])
 

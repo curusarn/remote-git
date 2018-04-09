@@ -68,7 +68,7 @@ def _recordGitCmd(cmd, filename, path, cwd_path):
 
 
 def _recordRepository(repo_path, data_path, device_id, git_cmd="git"):
-    repo_id = rutils.getRepoId(repo_path)
+    repo_id = rutils.getRepoId(repo_path, git_cmd)
 
     path = os.path.join(data_path, "data", repo_id, device_id)
 
@@ -104,7 +104,8 @@ def record(git_root, data_path, device_id, git_depth, dotfiles_git_cmd=None):
             _recordRepository(repo_path, data_path, device_id)
 
     # dotfiles
-    if dotfiles_git_cmd:
+    if not dotfiles_git_cmd is None:
+        print("[rgit] record dotfiles")
         _recordRepository(".", data_path, device_id, dotfiles_git_cmd)
 
 

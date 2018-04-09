@@ -39,15 +39,16 @@ def _idFromHttps(remote):
 
 
 def _idFromSsh(remote):
-    if not remote.endswith(".git"):
-        raise Exception("Fatal in _idFromSsh")
     after_at = remote.split('@')[1]
     remote = '/'.join(after_at.split(':'))
-    return remote[:-4]
+    if remote.endswith(".git"):
+        remote = remote[:-4]
+    return remote
     
 
 def getRepoId(directory, git_cmd="git"):
-    isGitRepository(directory, policy="require")
+    if git_cmd == "git":
+        isGitRepository(directory, policy="require")
 
     cmd = git_cmd + " remote -v"
     output = subprocess.check_output(cmd, shell=True, cwd=directory)
